@@ -17,8 +17,13 @@ const app = () => {
           <Text style={styles.ButtonText} >Explore</Text>
         </Pressable>
         </Link>
+        <Link href="/ex" style={{marginHorizontal: 'auto'}} asChild>
+        <Pressable style={styles.button}>
+          <Text style={styles.ButtonText} >Error Page</Text>
+        </Pressable>
+        </Link>
       </ImageBackground>
-    </View> 
+    </View>  
   )
 }
 
