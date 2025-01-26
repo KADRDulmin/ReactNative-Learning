@@ -11,6 +11,7 @@ import Animated, {
   withTiming,
   withDelay,
   runOnJS,
+  Easing, // Add Easing from reanimated
 } from 'react-native-reanimated';
 import { useEffect, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -35,6 +36,7 @@ interface FloatingIconProps {
 interface GameIcon {
   id: string;
   position: number;
+  startY: number;
   iconType: MedicalIconName;
 }
 
@@ -70,6 +72,133 @@ const SCORE_MESSAGES = {
   expert: "You're showing surgeon-level precision!"
 };
 
+const MOVEMENT_PATTERNS = [
+  {
+    vertical: (duration: number) => withRepeat(
+      withSequence(
+        withTiming(SCREEN_HEIGHT * 0.3, { duration: duration * 0.7 }),
+        withTiming(0, { duration: duration * 0.3 })
+      ), -1, true
+    ),
+    horizontal: (position: number) => withRepeat(
+      withSequence(
+        withTiming(position + 100, { duration: 2000 }),
+        withTiming(position - 100, { duration: 2000 })
+      ), -1, true
+    )
+  },
+  {
+    vertical: (duration: number) => withRepeat(
+      withTiming(SCREEN_HEIGHT * 0.4, { duration }), -1, true
+    ),
+    horizontal: (position: number) => withRepeat(
+      withSequence(
+        withTiming(position + 30, { duration: 800 }),
+        withTiming(position - 30, { duration: 800 })
+      ), -1, true
+    )
+  },
+  {
+    vertical: (duration: number) => withRepeat(
+      withSequence(
+        withSpring(SCREEN_HEIGHT * 0.2),
+        withSpring(0)
+      ), -1, true
+    ),
+    horizontal: (position: number) => withRepeat(
+      withSequence(
+        withSpring(position + 50),
+        withSpring(position - 50)
+      ), -1, true
+    )
+  },
+  {
+    vertical: (duration: number, startY: number) => withRepeat(
+      withSequence(
+        withSpring(startY + 100),
+        withSpring(startY - 100)
+      ), -1, true
+    ),
+    horizontal: (position: number) => withRepeat(
+      withSequence(
+        withSpring(position + 70, { damping: 8 }),
+        withSpring(position - 70, { damping: 8 })
+      ), -1, true
+    )
+  },
+  {
+    vertical: (duration: number, startY: number) => withRepeat(
+      withSequence(
+        withTiming(startY + 150, { 
+          duration: 1500, 
+          easing: Easing.bezierFn(0.25, 0.1, 0.25, 1) // Use bezierFn instead of bezier
+        }),
+        withTiming(startY - 50, { 
+          duration: 1000, 
+          easing: Easing.bezierFn(0.25, 0.1, 0.25, 1)
+        })
+      ), -1, true
+    ),
+    horizontal: (position: number) => withRepeat(
+      withSequence(
+        withTiming(position + 100, { 
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease)
+        }),
+        withTiming(position - 100, { 
+          duration: 1500,
+          easing: Easing.inOut(Easing.ease)
+        })
+      ), -1, true
+    )
+  }
+];
+
+// Add starting position patterns
+const STARTING_POSITIONS = {
+  corners: [
+    { x: ICON_SIZE, y: ICON_SIZE },
+    { x: SCREEN_WIDTH - ICON_SIZE * 3, y: ICON_SIZE },
+    { x: ICON_SIZE, y: SCREEN_HEIGHT * 0.3 },
+    { x: SCREEN_WIDTH - ICON_SIZE * 3, y: SCREEN_HEIGHT * 0.3 },
+  ],
+  sides: [
+    { x: 0, y: SCREEN_HEIGHT * 0.15 },
+    { x: SCREEN_WIDTH - ICON_SIZE * 2, y: SCREEN_HEIGHT * 0.15 },
+  ],
+  top: (index: number, total: number) => ({
+    x: (SCREEN_WIDTH / (total + 1)) * (index + 1),
+    y: 0
+  })
+};
+
+const STARTING_PATTERNS = {
+  circle: (index: number, total: number) => {
+    const angle = (2 * Math.PI * index) / total;
+    const radius = Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) * 0.3;
+    return {
+      x: SCREEN_WIDTH / 2 + radius * Math.cos(angle),
+      y: SCREEN_HEIGHT * 0.3 + radius * Math.sin(angle),
+      delay: index * 200
+    };
+  },
+  random: () => ({
+    x: Math.random() * (SCREEN_WIDTH - ICON_SIZE * 3),
+    y: Math.random() * (SCREEN_HEIGHT * 0.4),
+    delay: Math.random() * 1000
+  }),
+  diagonal: (index: number, total: number) => ({
+    x: (SCREEN_WIDTH / total) * index,
+    y: (SCREEN_HEIGHT * 0.4 / total) * index,
+    delay: index * 300
+  }),
+  wave: (index: number, total: number) => ({
+    x: (SCREEN_WIDTH / total) * index,
+    y: Math.sin(index) * 50 + SCREEN_HEIGHT * 0.2,
+    delay: index * 150
+  })
+};
+
 function BenefitTooltip({ benefit, visible }: BenefitTooltipProps) {
   return (
     <Animated.View 
@@ -81,37 +210,41 @@ function BenefitTooltip({ benefit, visible }: BenefitTooltipProps) {
   );
 }
 
-function FloatingIcon({ onCatch, position }: FloatingIconProps) {
-  const translateY = useSharedValue(0);
+function FloatingIcon({ onCatch, position, startY = 0 }: FloatingIconProps & { startY?: number }) {
+  const translateY = useSharedValue(startY);
   const translateX = useSharedValue(position);
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
   const icon = MEDICAL_ICONS[Math.floor(Math.random() * MEDICAL_ICONS.length)];
-
+  
   useEffect(() => {
-    // Adjust movement bounds for Android
-    const maxHeight = Platform.OS === 'android' ? SCREEN_HEIGHT * 0.3 : SCREEN_HEIGHT - 400;
-    const minHeight = Platform.OS === 'android' ? 50 : 0;
-    const verticalDistance = Math.random() * (maxHeight - minHeight) + minHeight;
+    // Randomly select movement pattern
+    const pattern = MOVEMENT_PATTERNS[Math.floor(Math.random() * MOVEMENT_PATTERNS.length)];
+    const duration = Math.random() * 1000 + 2000; // Random duration between 2-3s
     
-    translateY.value = withRepeat(
-      withTiming(verticalDistance, { 
-        duration: Platform.OS === 'android' ? 2000 : 3000 
-      }),
-      -1,
-      true
-    );
-
-    // Adjust horizontal movement
-    const horizontalRange = Math.min(30, (SCREEN_WIDTH - position) / 3);
-    translateX.value = withRepeat(
-      withSequence(
-        withTiming(position + horizontalRange, { duration: 1500 }),
-        withTiming(position - horizontalRange, { duration: 1500 })
-      ),
-      -1,
-      true
-    );
+    // Apply random starting delay
+    const startDelay = Math.random() * 1000;
+    
+    setTimeout(() => {
+      // Adjust vertical movement based on starting position
+      const maxHeight = Platform.OS === 'android' ? SCREEN_HEIGHT * 0.3 : SCREEN_HEIGHT - 400;
+      const verticalDistance = Math.min(maxHeight - startY, SCREEN_HEIGHT * 0.3);
+      
+      translateY.value = pattern.vertical(duration, startY);
+      translateX.value = pattern.horizontal(position);
+    }, startDelay);
+    
+    // Add subtle rotation for some icons
+    if (Math.random() > 0.5) {
+      scale.value = withRepeat(
+        withSequence(
+          withTiming(1.1, { duration: 1000 }),
+          withTiming(0.9, { duration: 1000 })
+        ),
+        -1,
+        true
+      );
+    }
   }, []);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -163,20 +296,28 @@ export default function NotFoundScreen() {
   };
 
   const generateIcons = () => {
-    const padding = ICON_SIZE * 3;
-    const usableWidth = SCREEN_WIDTH - padding;
+    const newIcons: GameIcon[] = [];
+    const totalIcons = ICONS_COUNT;
+    const pattern = Object.values(STARTING_PATTERNS)[
+      Math.floor(Math.random() * Object.values(STARTING_PATTERNS).length)
+    ];
     
-    const newIcons: GameIcon[] = Array(ICONS_COUNT).fill(0).map((_, i) => {
+    // Distribute icons across different starting positions
+    for (let i = 0; i < totalIcons; i++) {
       const randomIcon = MEDICAL_ICONS[Math.floor(Math.random() * MEDICAL_ICONS.length)];
-      return {
+      const position = pattern(i, ICONS_COUNT);
+      
+      newIcons.push({
         id: `${Date.now()}-${i}`,
-        position: (padding/2) + ((usableWidth / ICONS_COUNT) * i) + 
-                  (Math.random() * (usableWidth / ICONS_COUNT - ICON_SIZE)),
+        position: position.x,
+        startY: position.y,
         iconType: randomIcon.name
-      };
-    });
+      });
+    }
     
-    setIcons(newIcons);
+    // Shuffle array for random appearance
+    const shuffled = newIcons.sort(() => Math.random() - 0.5);
+    setIcons(shuffled);
   };
 
   const handleCatch = () => {
@@ -266,6 +407,7 @@ export default function NotFoundScreen() {
             <FloatingIcon
               key={icon.id}
               position={icon.position}
+              startY={icon.startY}
               onCatch={handleCatch}
             />
           ))}
@@ -358,7 +500,7 @@ const styles = StyleSheet.create({
   gameContainer: {
     position: 'relative',
     width: '100%',
-    height: Platform.OS === 'android' ? SCREEN_HEIGHT * 0.4 : SCREEN_HEIGHT * 0.5,
+    height: Platform.OS === 'android' ? SCREEN_HEIGHT * 0.5 : SCREEN_HEIGHT * 0.6,
     alignItems: 'center',
     marginVertical: 20,
     overflow: 'visible', // Changed to visible to allow touches
