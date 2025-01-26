@@ -1,7 +1,7 @@
 // app/components/404Game/FloatingIcon.tsx
 import React, { useEffect, useRef } from 'react';
 import { TouchableOpacity, Platform, Vibration } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -34,8 +34,8 @@ function FloatingIcon({ onCatch, position, startY = 0 }: FloatingIconProps & { s
       shouldDuckAndroid: true,
       playThroughEarpieceAndroid: false,
       allowsRecordingIOS: false,
-      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-      interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
     });
 
     // Load sound
